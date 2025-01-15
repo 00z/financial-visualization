@@ -83,17 +83,21 @@ def get_dividend_data():
         return pd.DataFrame()
     
     # 检查是否有有效数据
-    if len(dividend_data) == 0:
+    if not dividend_data:
         st.warning("未获取到有效股息率数据")
         return pd.DataFrame(columns=['date', 'value'])
         
     # 按日期排序并计算平均值
     df = pd.DataFrame(dividend_data)
+    if df.empty:
+        st.warning("数据转换失败")
+        return pd.DataFrame(columns=['date', 'value'])
+        
     df['date'] = pd.to_datetime(df['date'])
     df = df.set_index('date').resample('M').mean().reset_index()
     
     # 检查最终数据是否为空
-    if df.empty or len(df) == 0:
+    if df.empty:
         st.warning("处理后的数据为空")
         return pd.DataFrame(columns=['date', 'value'])
         
