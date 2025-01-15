@@ -33,103 +33,60 @@ def get_dividend_data():
         if rs.error_code != '0':
             st.error(f"获取沪深300成分股失败: {rs.error_msg}")
             return pd.DataFrame(columns=['date', 'value'])
-    except Exception as e:
-        st.error(f"获取成分股数据时发生错误: {str(e)}")
-        return pd.DataFrame(columns=['date', 'value'])
-        
-    try:
-        # 手动解析数据
-        raw_data = rs.get_data()
-        if not raw_data or len(raw_data.strip()) == 0:
+            
+        # 使用pandas直接解析数据
+        df_stocks = rs.get_data()
+        if df_stocks.empty:
             st.warning("未获取到成分股数据")
             return pd.DataFrame(columns=['date', 'value'])
-    except Exception as e:
-        st.error(f"解析成分股数据时发生错误: {str(e)}")
-        return pd.DataFrame(columns=['date', 'value'])
-        
-    try:
-        # 解析成分股数据
-        hs300_stocks = []
-        valid_stocks = 0
-        for line in raw_data.split('\n'):
-            if not line or line.isspace():
-                continue
-                
-            try:
-                stock_data = line.split(',')
-                if len(stock_data) > 1 and stock_data[1]:  # 确保股票代码存在
-                    hs300_stocks.append(stock_data)
-                    valid_stocks += 1
-            except Exception as e:
-                print(f"跳过无效成分股数据: {line}, 错误: {e}")
-                continue
-    except Exception as e:
-        st.error(f"解析成分股数据时发生错误: {str(e)}")
-        return pd.DataFrame(columns=['date', 'value'])
-        
-    try:
-        if valid_stocks == 0:
-            st.warning("未找到有效的成分股数据")
+            
+        # 提取股票代码
+        hs300_stocks = df_stocks['code'].tolist()
+        if not hs300_stocks:
+            st.warning("未找到有效的成分股代码")
             return pd.DataFrame(columns=['date', 'value'])
+    except Exception as e:
+        st.error(f"解析成分股数据时发生错误: {str(e)}")
+        return pd.DataFrame(columns=['date', 'value'])
         
-        dividend_data = []
-        valid_dividends = 0
+    try:
+        # 获取所有成分股的股息率数据
+        all_dividends = []
         
-        # 使用numpy数组存储数据以提高性能
-        dividend_values = []
-        dividend_dates = []
-        
-        for stock in hs300_stocks:
-            code = stock[1]
+        for code in hs300_stocks:
             try:
-                # 获取个股股息率数据
                 rs = bs.query_dividend_data(
                     code=code,
                     year=start_date[:4],
                     yearType="report"
                 )
                 if rs.error_code != '0':
-                    print(f"股票 {code} 股息率数据获取失败: {rs.error_msg}")
                     continue
                     
-                # 手动解析股息率数据
-                raw_dividend = rs.get_data()
-                if not raw_dividend or len(raw_dividend.strip()) == 0:
+                # 使用pandas直接解析数据
+                df_dividend = rs.get_data()
+                if df_dividend.empty:
                     continue
                     
-                for line in raw_dividend.split('\n'):
-                    if not line or line.isspace():
-                        continue
-                        
-                    try:
-                        data = line.split(',')
-                        if len(data) < 4 or not data[3]:
-                            continue
-                            
-                        # 解析股息率
-                        dividend_rate = float(data[3])
-                        if dividend_rate > 0:  # 只保留正股息率
-                            dividend_dates.append(data[1])
-                            dividend_values.append(dividend_rate)
-                            valid_dividends += 1
-                            
-                    except (ValueError, TypeError) as e:
-                        print(f"跳过无效股息率数据: {data[3] if len(data) > 3 else '无数据'}, 错误: {e}")
-                        continue
-                        
+                # 筛选有效股息率数据
+                df_dividend = df_dividend[df_dividend['dividend_rate'] > 0]
+                if not df_dividend.empty:
+                    all_dividends.append(df_dividend[['dividend_date', 'dividend_rate']])
+                    
             except Exception as e:
                 print(f"获取股票 {code} 数据失败: {str(e)}")
                 continue
                 
-        if valid_dividends == 0:
+        if not all_dividends:
             st.warning("未找到有效的股息率数据")
             return pd.DataFrame(columns=['date', 'value'])
             
-        # 使用numpy数组创建DataFrame
-        dividend_data = {
-            'date': np.array(dividend_dates, dtype='datetime64'),
-            'value': np.array(dividend_values, dtype='float64')
-        }
+        # 合并所有数据
+        df = pd.concat(all_dividends)
+        df = df.rename(columns={
+            'dividend_date': 'date',
+            'dividend_rate': 'value'
+        })
     except Exception as e:
         st.error(f"处理股息率数据时发生错误: {str(e)}")
         return pd.DataFrame(columns=['date', 'value'])
@@ -139,18 +96,17 @@ def get_dividend_data():
         return pd.DataFrame()
     
     # 检查是否有有效数据
-    if len(dividend_data['date']) == 0:
+    if df.empty:
         st.warning("未获取到有效股息率数据")
         return pd.DataFrame(columns=['date', 'value'])
         
-    # 按日期排序并计算平均值
-    df = pd.DataFrame(dividend_data)
-    if df.empty:
-        st.warning("数据转换失败")
+    # 转换日期格式并处理数据
+    try:
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date').resample('M').mean().reset_index()
+    except Exception as e:
+        st.error(f"数据处理失败: {str(e)}")
         return pd.DataFrame(columns=['date', 'value'])
-        
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.set_index('date').resample('M').mean().reset_index()
     
     # 检查最终数据是否为空
     if df.empty:
