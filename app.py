@@ -24,11 +24,20 @@ def get_dividend_data():
         rs = bs.query_dividend_data(code=code, year=start_date[:4])
         while (rs.error_code == '0') & rs.next():
             data = rs.get_row_data()
-            if data[3]:  # 检查股息率是否有效
-                dividend_data.append({
-                    'date': data[1],
-                    'value': float(data[3])
-                })
+            # 调试输出数据格式
+            print(f"Raw data: {data}")
+            
+            # 确保数据格式正确且包含股息率信息
+            if len(data) > 3 and data[3] and data[3].replace('.', '').isdigit():
+                try:
+                    dividend_rate = float(data[3])
+                    dividend_data.append({
+                        'date': data[1],
+                        'value': dividend_rate
+                    })
+                except (ValueError, TypeError) as e:
+                    print(f"Error converting dividend rate: {e}")
+                    continue
     
     # 按日期排序并计算平均值
     df = pd.DataFrame(dividend_data)
