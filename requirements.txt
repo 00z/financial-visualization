@@ -1,2 +1,2 @@
 streamlit>=1.22.0
-
+baostock>=0.8.80
