@@ -13,22 +13,37 @@ def get_dividend_data():
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
     
-    rs = bs.query_hs300_stocks()
-    hs300_stocks = []
-    while (rs.error_code == '0') & rs.next():
-        hs300_stocks.append(rs.get_row_data())
-    
-    dividend_data = []
-    for stock in hs300_stocks:
-        code = stock[1]
-        rs = bs.query_dividend_data(code=code, year=start_date[:4])
-        while (rs.error_code == '0') & rs.next():
-            data = rs.get_row_data()
-            # 调试输出数据格式
-            print(f"Raw data: {data}")
-            
-            # 确保数据格式正确且包含股息率信息
-            if len(data) > 3 and data[3] and data[3].replace('.', '').isdigit():
+    try:
+        # 获取沪深300成分股
+        rs = bs.query_hs300_stocks()
+        if rs.error_code != '0':
+            st.error(f"获取沪深300成分股失败: {rs.error_msg}")
+            return pd.DataFrame()
+        
+        hs300_stocks = []
+        while rs.next():
+            stock_data = rs.get_row_data()
+            if stock_data and len(stock_data) > 1:
+                hs300_stocks.append(stock_data)
+        
+        dividend_data = []
+        for stock in hs300_stocks:
+            code = stock[1]
+            # 获取个股股息率数据
+            rs = bs.query_dividend_data(
+                code=code,
+                year=start_date[:4],
+                yearType="report"
+            )
+            if rs.error_code != '0':
+                continue
+                
+            while rs.next():
+                data = rs.get_row_data()
+                if not data or len(data) < 4:
+                    continue
+                    
+                # 解析股息率数据
                 try:
                     dividend_rate = float(data[3])
                     dividend_data.append({
@@ -36,8 +51,12 @@ def get_dividend_data():
                         'value': dividend_rate
                     })
                 except (ValueError, TypeError) as e:
-                    print(f"Error converting dividend rate: {e}")
+                    print(f"跳过无效股息率数据: {data[3]}，错误: {e}")
                     continue
+                    
+    except Exception as e:
+        st.error(f"数据获取失败: {str(e)}")
+        return pd.DataFrame()
     
     # 按日期排序并计算平均值
     df = pd.DataFrame(dividend_data)
