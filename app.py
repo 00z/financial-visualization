@@ -83,7 +83,7 @@ def get_dividend_data():
         return pd.DataFrame()
     
     # 检查是否有有效数据
-    if not dividend_data:
+    if len(dividend_data) == 0:
         st.warning("未获取到有效股息率数据")
         return pd.DataFrame(columns=['date', 'value'])
         
@@ -93,7 +93,7 @@ def get_dividend_data():
     df = df.set_index('date').resample('M').mean().reset_index()
     
     # 检查最终数据是否为空
-    if df.empty:
+    if df.empty or len(df) == 0:
         st.warning("处理后的数据为空")
         return pd.DataFrame(columns=['date', 'value'])
         
