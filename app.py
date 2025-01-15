@@ -20,40 +20,64 @@ def get_dividend_data():
             st.error(f"获取沪深300成分股失败: {rs.error_msg}")
             return pd.DataFrame()
         
+        # 手动解析数据
+        raw_data = rs.get_data()
+        if not raw_data:
+            return pd.DataFrame()
+            
+        # 解析成分股数据
         hs300_stocks = []
-        while rs.next():
-            stock_data = rs.get_row_data()
-            if stock_data and len(stock_data) > 1:
-                hs300_stocks.append(stock_data)
+        for line in raw_data.split('\n'):
+            if not line:
+                continue
+            try:
+                stock_data = line.split(',')
+                if len(stock_data) > 1:
+                    hs300_stocks.append(stock_data)
+            except Exception as e:
+                print(f"跳过无效成分股数据: {line}, 错误: {e}")
+                continue
         
         dividend_data = []
         for stock in hs300_stocks:
             code = stock[1]
-            # 获取个股股息率数据
-            rs = bs.query_dividend_data(
-                code=code,
-                year=start_date[:4],
-                yearType="report"
-            )
-            if rs.error_code != '0':
+            try:
+                # 获取个股股息率数据
+                rs = bs.query_dividend_data(
+                    code=code,
+                    year=start_date[:4],
+                    yearType="report"
+                )
+                if rs.error_code != '0':
+                    continue
+                    
+                # 手动解析股息率数据
+                raw_dividend = rs.get_data()
+                if not raw_dividend:
+                    continue
+                    
+                for line in raw_dividend.split('\n'):
+                    if not line:
+                        continue
+                    try:
+                        data = line.split(',')
+                        if len(data) < 4:
+                            continue
+                            
+                        # 解析股息率
+                        dividend_rate = float(data[3])
+                        dividend_data.append({
+                            'date': data[1],
+                            'value': dividend_rate
+                        })
+                    except (ValueError, TypeError) as e:
+                        print(f"跳过无效股息率数据: {data[3] if len(data) > 3 else '无数据'}, 错误: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"获取股票 {code} 数据失败: {str(e)}")
                 continue
                 
-            while rs.next():
-                data = rs.get_row_data()
-                if not data or len(data) < 4:
-                    continue
-                    
-                # 解析股息率数据
-                try:
-                    dividend_rate = float(data[3])
-                    dividend_data.append({
-                        'date': data[1],
-                        'value': dividend_rate
-                    })
-                except (ValueError, TypeError) as e:
-                    print(f"跳过无效股息率数据: {data[3]}，错误: {e}")
-                    continue
-                    
     except Exception as e:
         st.error(f"数据获取失败: {str(e)}")
         return pd.DataFrame()
